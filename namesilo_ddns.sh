@@ -29,6 +29,21 @@ IP_URLS=(
     "http://ipecho.net/plain"
     "http://myip.dnsomatic.com"
 )
+# Pools for request public IP address
+POOL_IPV4=(
+    "http://v4.ident.me"
+    "https://ip4.nnev.de"
+    "https://v4.ifconfig.co"
+    "https://ipv4.icanhazip.com"
+    "https://ipv4.wtfismyip.com/text"
+)
+POOL_IPV6=(
+    "http://v6.ident.me"
+    "https://ip6.nnev.de"
+    "https://v6.ifconfig.co"
+    "https://ipv6.icanhazip.com"
+    "https://ipv6.wtfismyip.com/text"
+)
 
 ## If enable debug log echo
 # LOG_DEBUG=true
@@ -43,6 +58,19 @@ RSLT_811="[811] IP no change, no need to update"
 RSLT_821="[821] No exist A record is matched"
 
 function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
+
+## @Parameter1: "IPV4" or "IPV6"
+function _get_ip_response()
+{
+    local START_IDX IDX
+    local POOL_VAR="POOL_$1[@]"
+    local PATTERN_VAR="PATTERN_$1"
+    local PATTERN_IPV4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
+    local PATTERN_IPV6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
+
+
+
+}
 
 function get_current_ip()
 {
@@ -255,12 +283,12 @@ function print_report()
 function main()
 {
     get_current_ip
-    check_hosts
-    [[ ${HOST_COUNT} -eq 0 ]] && exit 0
-    fetch_records
-    [[ ${HOST_COUNT} -eq 0 ]] && exit 0
-    update_records
-    print_report
+    # check_hosts
+    # [[ ${HOST_COUNT} -eq 0 ]] && exit 0
+    # fetch_records
+    # [[ ${HOST_COUNT} -eq 0 ]] && exit 0
+    # update_records
+    # print_report
 }
 
 main
