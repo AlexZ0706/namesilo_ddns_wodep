@@ -29,6 +29,21 @@ IP_URLS=(
     "http://ipecho.net/plain"
     "http://myip.dnsomatic.com"
 )
+# Pools for request public IP address
+IPV4_POOL=(
+    "http://v4.ident.me"
+    "https://ip4.nnev.de"
+    "https://v4.ifconfig.co"
+    "https://ipv4.icanhazip.com"
+    "https://ipv4.wtfismyip.com/text"
+)
+IPV6_POOL=(
+    "http://v6.ident.me"
+    "https://ip6.nnev.de"
+    "https://v6.ifconfig.co"
+    "https://ipv6.icanhazip.com"
+    "https://ipv6.wtfismyip.com/text"
+)
 
 ## If enable debug log echo
 # LOG_DEBUG=true
