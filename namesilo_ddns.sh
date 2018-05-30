@@ -78,6 +78,25 @@ function get_current_ip()
     [[ $1 == "IPV6" ]] && IPV6=${CUR_IP}
 }
 
+function split_hosts()
+{
+    local SECS NUM
+    for i in ${!HOST[@]}; do
+        STAGE[${i}]="split"
+        SECS=(${HOST[i]//./ })
+        NUM=${#SECS[@]}
+        if [[ ${NUM} -lt 2 ]]; then
+            [[ -n ${IPV4} ]] && A1_RESULT[${i}]=${RSLT_801}
+            [[ -n ${IPV6} ]] && A4_RESULT[${i}]=${RSLT_801}
+        else
+            DOMAIN[${i}]="${SECS[(NUM-2)]}.${SECS[(NUM-1)]}"
+            [[ ${NUM} -gt 2 ]] && RRHOST[${i}]=${HOST[i]%.${DOMAIN[i]}}
+        fi
+        _log_debug "Split host-${i}: [${HOST[i]}]>>[${RRHOST[i]}|${DOMAIN[i]}]"
+    done
+}
+
+
 function check_hosts()
 {
     local SECS NUM RES_PING
