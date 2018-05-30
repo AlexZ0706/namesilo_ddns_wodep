@@ -96,6 +96,18 @@ function split_hosts()
     done
 }
 
+## @Para1: "IPV4" or "IPV6"
+function check_hosts()
+{
+    [[ $1 != "IPV4" && $1 != "IPV6" ]] && return 1
+
+    local RES_STDOUT RES_STDERR
+    for i in ${!HOST[@]}; do
+
+
+    done
+}
+
 
 function check_hosts()
 {
