@@ -22,14 +22,8 @@ HOST=(
 ## Temp xml file to get response from Namesilo
 RESPONSE="/var/tmp/namesilo_response.xml"
 
-## Available urls to get current ip
-IP_URLS=(
-    "http://api.ipify.org"
-    "http://icanhazip.com"
-    "http://ipecho.net/plain"
-    "http://myip.dnsomatic.com"
-)
-# Pools for request public IP address
+## Pools for request public IP address
+## Emptying pool means disabling corresponding DNS record updating
 POOL_IPV4=(
     "http://v4.ident.me"
     "https://ip4.nnev.de"
@@ -37,6 +31,7 @@ POOL_IPV4=(
     "https://ipv4.icanhazip.com"
     "https://ipv4.wtfismyip.com/text"
 )
+
 POOL_IPV6=(
     "http://v6.ident.me"
     "https://ip6.nnev.de"
@@ -59,34 +54,28 @@ RSLT_821="[821] No exist A record is matched"
 
 function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
 
-## @Parameter1: "IPV4" or "IPV6"
-function _get_ip_response()
-{
-    local START_IDX IDX
-    local POOL_VAR="POOL_$1[@]"
-    local PATTERN_VAR="PATTERN_$1"
-    local PATTERN_IPV4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
-    local PATTERN_IPV6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
-
-
-
-}
-
+## @Para1: "IPV4" or "IPV6"
 function get_current_ip()
 {
-    ## used to balance loading the urls
-    local START_IDX=$(( ${RANDOM} % ${#IP_URLS[@]} ))
-    local IP_PATTERN="^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$"
-    local URL_IDX
+    [[ $1 != "IPV4" && $1 != "IPV6" ]] && return 1
 
-    for (( i=0; i<${#IP_URLS[@]}; i++ )); do
-        let URL_IDX=${i}+${START_IDX}
-        [[ ${URL_IDX} -ge ${#IP_URLS[@]} ]] && let URL_IDX-=${#IP_URLS[@]}
-        GET_IP=$( wget -qO- ${IP_URLS[URL_IDX]} )
-        _log_debug "Get current IP [${GET_IP}] from URL [${IP_URLS[URL_IDX]}]."
-        [[ ${GET_IP} =~ ${IP_PATTERN} ]] && break
-        unset GET_IP
+    local VAR CUR_IP
+    local PATTERN_IPV4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
+    local PATTERN_IPV6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
+    VAR="PATTERN_$1"; local PATTERN_IP=${!VAR}
+    VAR="POOL_$1[@]"; local POOL_IP=(${!VAR})
+
+    ## get current ip from pool in random order
+    local RAND=$(( ${RANDOM} % ${#POOL_IP[@]} ))
+    for (( i=((${RAND}-${#POOL_IP[@]})); i<${RAND}; i++ )); do
+        CUR_IP=$( wget -qO- -t 1 -T 5 ${POOL_IP[i]} )
+        _log_debug "Get [${CUR_IP}] from [${POOL_IP[i]}]."
+        [[ ${CUR_IP} =~ ${PATTERN_IP} ]] && VAR="SUCC"; break
     done
+
+    [[ ${VAR} != "SUCC" ]] && return 1
+    [[ $1 == "IPV4" ]] && IPV4=${CUR_IP}
+    [[ $1 == "IPV6" ]] && IPV6=${CUR_IP}
 }
 
 function check_hosts()
@@ -283,13 +272,13 @@ function print_report()
 function main()
 {
     get_current_ip
-    # check_hosts
-    # [[ ${HOST_COUNT} -eq 0 ]] && exit 0
-    # fetch_records
-    # [[ ${HOST_COUNT} -eq 0 ]] && exit 0
-    # update_records
-    # print_report
+    check_hosts
+    [[ ${HOST_COUNT} -eq 0 ]] && exit 0
+    fetch_records
+    [[ ${HOST_COUNT} -eq 0 ]] && exit 0
+    update_records
+    print_report
 }
 
-main
+#main
 exit $(( ${HOST_COUNT}+128 ))
