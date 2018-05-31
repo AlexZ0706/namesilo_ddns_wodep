@@ -23,7 +23,7 @@ HOST=(
 RESPONSE="/var/tmp/namesilo_response.xml"
 
 ## Pools for request public IP address
-## Emptying pool means disabling corresponding DNS record updating
+## Emptying pool means disabling corresponding DNS record (A/AAAA) updating
 POOL_IPV4=(
     "http://v4.ident.me"
     "https://ip4.nnev.de"
@@ -41,7 +41,7 @@ POOL_IPV6=(
 )
 
 ## If enable debug log echo
-# LOG_DEBUG=true
+LOG_DEBUG=true
 
 ## ========= Do not edit lines below =========
 
@@ -57,25 +57,27 @@ function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
 ## @Para1: "IPV4" or "IPV6"
 function get_current_ip()
 {
-    [[ $1 != "IPV4" && $1 != "IPV6" ]] && return 1
+    [[ ${1} != "IPV4" && ${1} != "IPV6" ]] && return 1
 
-    local VAR CUR_IP
+    local VAR
     local PATTERN_IPV4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
     local PATTERN_IPV6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
-    VAR="PATTERN_$1"; local PATTERN_IP=${!VAR}
-    VAR="POOL_$1[@]"; local POOL_IP=(${!VAR})
+    VAR="PATTERN_${1}"; local PATTERN_IP=${!VAR}
+    VAR="POOL_${1}[@]"; local POOL_IP=(${!VAR})
 
     ## get current ip from pool in random order
     local RAND=$(( ${RANDOM} % ${#POOL_IP[@]} ))
     for (( i=((${RAND}-${#POOL_IP[@]})); i<${RAND}; i++ )); do
-        CUR_IP=$( wget -qO- -t 1 -T 5 ${POOL_IP[i]} )
-        _log_debug "Get [${CUR_IP}] from [${POOL_IP[i]}]."
-        [[ ${CUR_IP} =~ ${PATTERN_IP} ]] && VAR="SUCC"; break
+        VAR=$( wget -qO- -t 1 -T 5 ${POOL_IP[i]} )
+        _log_debug "Get [${VAR}] from [${POOL_IP[i]}]."
+        if [[ ${VAR} =~ ${PATTERN_IP} ]]; then
+            eval "${1}=${VAR}"
+            break
+        fi
     done
 
-    [[ ${VAR} != "SUCC" ]] && return 1
-    [[ $1 == "IPV4" ]] && IPV4=${CUR_IP}
-    [[ $1 == "IPV6" ]] && IPV6=${CUR_IP}
+    VAR="${1}"; [[ -n ${!VAR} ]] && return 0
+    _log_debug "Get ${1} failed. Corresponding records will not be updated."
 }
 
 function split_hosts()
@@ -99,11 +101,11 @@ function split_hosts()
 ## @Para1: "IPV4" or "IPV6"
 function check_hosts()
 {
-    [[ $1 != "IPV4" && $1 != "IPV6" ]] && return 1
+    [[ ${1} != "IPV4" && ${1} != "IPV6" ]] && return 1
 
     local RES_STDOUT RES_STDERR
     for i in ${!HOST[@]}; do
-
+        continue
 
     done
 }
