@@ -49,8 +49,10 @@ LOG_DEBUG=true
 HOST_COUNT=0
 
 RSLT_801="[801] Invalid Host Syntax"
-RSLT_811="[811] IP no change, no need to update"
+RSLT_811="[811] Resolving failed via IPv4"
+RSLT_812="[812] Resolving failed via IPv6"
 RSLT_821="[821] No exist A record is matched"
+RSLT_850="[850] IP no change, no need to update"
 
 function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
 
@@ -71,7 +73,7 @@ function get_current_ip()
         VAR=$( wget -qO- -t 1 -T 5 ${POOL_IP[i]} )
         _log_debug "Get [${VAR}] from [${POOL_IP[i]}]."
         if [[ ${VAR} =~ ${PATTERN_IP} ]]; then
-            eval "${1}=${VAR}"
+            eval "CUR_${1}=${VAR}"
             break
         fi
     done
@@ -80,38 +82,50 @@ function get_current_ip()
     _log_debug "Get ${1} failed. Corresponding records will not be updated."
 }
 
-function split_hosts()
+function check_hosts()
 {
-    local SECS NUM
+    local SECS NUM RES
     for i in ${!HOST[@]}; do
-        STAGE[${i}]="split"
+        STAGE[${i}]="check"
         SECS=(${HOST[i]//./ })
         NUM=${#SECS[@]}
+
+        ## split host
         if [[ ${NUM} -lt 2 ]]; then
-            [[ -n ${IPV4} ]] && A1_RESULT[${i}]=${RSLT_801}
-            [[ -n ${IPV6} ]] && A4_RESULT[${i}]=${RSLT_801}
+            [[ -n ${CUR_IPV4} ]] && A1_RESULT[${i}]=${RSLT_801}
+            [[ -n ${CUR_IPV6} ]] && A4_RESULT[${i}]=${RSLT_801}
         else
             DOMAIN[${i}]="${SECS[(NUM-2)]}.${SECS[(NUM-1)]}"
             [[ ${NUM} -gt 2 ]] && RRHOST[${i}]=${HOST[i]%.${DOMAIN[i]}}
         fi
         _log_debug "Split host-${i}: [${HOST[i]}]>>[${RRHOST[i]}|${DOMAIN[i]}]"
+
+        ## resolving check via ipv4
+        if [[ -n ${CUR_IPV4} && -z ${A1_RESULT[i]} ]]; then
+            RES=$( ping -c 1 -w 1 ${HOST[i]} 2>/dev/null )
+            _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
+            if [[ -z ${RES} ]]; then
+                A1_RESULT[${i}]=${RSLT_811}
+            elif [[ ${RES} == *${CUR_IPV4}* ]]; then
+                A1_RESULT[${i}]=${RSLT_850}
+            fi
+        fi
+
+        ## resolving check via ipv4
+        if [[ -n ${CUR_IPV6} && -z ${A4_RESULT[i]} ]]; then
+            RES=$( ping6 -c 1 -w 1 ${HOST[i]} 2>/dev/null )
+            _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
+            if [[ -z ${RES} ]]; then
+                A4_RESULT[${i}]=${RSLT_811}
+            elif [[ ${RES} == *${CUR_IPV6}* ]]; then
+                A4_RESULT[${i}]=${RSLT_850}
+            fi
+        fi
     done
 }
 
-## @Para1: "IPV4" or "IPV6"
-function check_hosts()
-{
-    [[ ${1} != "IPV4" && ${1} != "IPV6" ]] && return 1
 
-    local RES_STDOUT RES_STDERR
-    for i in ${!HOST[@]}; do
-        continue
-
-    done
-}
-
-
-function check_hosts()
+function check_hosts_old()
 {
     local SECS NUM RES_PING
     for i in ${!HOST[@]}; do
@@ -132,7 +146,7 @@ function check_hosts()
         if [[ -n ${GET_IP} ]]; then
             RES_PING=$( ping -c 1 ${HOST[i]} 2>&1 )
             _log_debug "Ping host-${i} result: [ ${RES_PING} ]"
-            [[ ${RES_PING} == *${GET_IP}* ]] && RESULT[${i}]=${RSLT_811}
+            [[ ${RES_PING} == *${GET_IP}* ]] && RESULT[${i}]=${RSLT_850}
         fi
 
         ## add valid domain to domains list for fetching records
@@ -252,7 +266,7 @@ function fetch_records()
                 REP_RRHOST[${REC_IDX}]=""  ## ensure this record won't be reused
                 if [[ ${REP_RRVALUE[REC_IDX]} == ${REQ_IP} ]]; then
                     [[ -z ${RESULT[i]} ]] && let HOST_COUNT--
-                    RESULT[${i}]=${RSLT_811}    ## unchanged ip won't be updated
+                    RESULT[${i}]=${RSLT_850}    ## unchanged ip won't be updated
                 fi
             fi
         done
