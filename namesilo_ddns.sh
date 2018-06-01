@@ -23,7 +23,7 @@ HOST=(
 RESPONSE="/var/tmp/namesilo_response.xml"
 
 ## Pools for request public IP address
-## Emptying pool means disabling corresponding DNS record (A/AAAA) updating
+## Emptying pool means to disable updating the corresponding DNS record (A/AAAA) 
 POOL_IPV4=(
     "http://v4.ident.me"
     "https://ip4.nnev.de"
@@ -106,18 +106,18 @@ function check_hosts()
             _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
             if [[ -z ${RES} ]]; then
                 A1_RESULT[${i}]=${RSLT_811}
-            elif [[ ${RES} == *${CUR_IPV4}* ]]; then
+            elif [[ ${RES} == *"(${CUR_IPV4})"* ]]; then
                 A1_RESULT[${i}]=${RSLT_850}
             fi
         fi
 
-        ## resolving check via ipv4
+        ## resolving check via ipv6
         if [[ -n ${CUR_IPV6} && -z ${A4_RESULT[i]} ]]; then
             RES=$( ping6 -c 1 -w 1 ${HOST[i]} 2>/dev/null )
             _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
             if [[ -z ${RES} ]]; then
-                A4_RESULT[${i}]=${RSLT_811}
-            elif [[ ${RES} == *${CUR_IPV6}* ]]; then
+                A4_RESULT[${i}]=${RSLT_812}
+            elif [[ ${RES} == *"(${CUR_IPV6})"* ]]; then
                 A4_RESULT[${i}]=${RSLT_850}
             fi
         fi
