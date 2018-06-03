@@ -23,7 +23,7 @@ HOST=(
 RESPONSE="/var/tmp/namesilo_response.xml"
 
 ## Pools for request public IP address
-## Emptying pool means to disable updating the corresponding DNS record (A/AAAA) 
+## Emptying pool means to disable updating the corresponding DNS record (A/AAAA)
 POOL_IPV4=(
     "http://v4.ident.me"
     "https://ip4.nnev.de"
@@ -45,14 +45,11 @@ LOG_DEBUG=true
 
 ## ========= Do not edit lines below =========
 
-## Count of hosts which need to update
-HOST_COUNT=0
-
 RSLT_801="[801] Invalid Host Syntax"
 RSLT_811="[811] Resolving failed via IPv4"
 RSLT_812="[812] Resolving failed via IPv6"
 RSLT_821="[821] No exist A record is matched"
-RSLT_850="[850] IP no change, no need to update"
+RSLT_850="[850] IP does not change, no need to update"
 
 function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
 
@@ -61,7 +58,7 @@ function get_current_ip()
 {
     [[ ${1} != "IPV4" && ${1} != "IPV6" ]] && return 1
 
-    local VAR
+    local VAR i
     local PATTERN_IPV4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
     local PATTERN_IPV6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
     VAR="PATTERN_${1}"; local PATTERN_IP=${!VAR}
@@ -84,7 +81,7 @@ function get_current_ip()
 
 function check_hosts()
 {
-    local SECS NUM RES
+    local SECS NUM RES i
     for i in ${!HOST[@]}; do
         STAGE[${i}]="check"
         SECS=(${HOST[i]//./ })
@@ -124,42 +121,6 @@ function check_hosts()
     done
 }
 
-
-function check_hosts_old()
-{
-    local SECS NUM RES_PING
-    for i in ${!HOST[@]}; do
-        STAGE[${i}]="check"
-        SECS=(${HOST[i]//./ })
-        NUM=${#SECS[@]}
-
-        ## seperate host
-        if [[ ${NUM} -lt 2 ]]; then
-            RESULT[${i}]=${RSLT_801}
-        else
-            DOMAIN[${i}]="${SECS[(NUM-2)]}.${SECS[(NUM-1)]}"
-            [[ ${NUM} -gt 2 ]] && RRHOST[${i}]=${HOST[i]%.${DOMAIN[i]}}
-        fi
-        _log_debug "Split host-${i}: [${HOST[i]}]>>[${RRHOST[i]}|${DOMAIN[i]}]"
-
-        ## check if the host's resolve is the same as the current ip
-        if [[ -n ${GET_IP} ]]; then
-            RES_PING=$( ping -c 1 ${HOST[i]} 2>&1 )
-            _log_debug "Ping host-${i} result: [ ${RES_PING} ]"
-            [[ ${RES_PING} == *${GET_IP}* ]] && RESULT[${i}]=${RSLT_850}
-        fi
-
-        ## add valid domain to domains list for fetching records
-        [[ -n ${RESULT[i]} ]] && continue
-        let HOST_COUNT++
-        if [[ " ${DOMAINS[@]} " != *" ${DOMAIN[i]} "* ]]; then
-            DOMAINS+=(${DOMAIN[i]})
-            _log_debug "Add new domain [${DOMAIN[i]}] to fetching list."
-        fi
-    done
-    _log_debug "At present, ${HOST_COUNT} host(s) need to update DNS record."
-}
-
 ## Parse xml response from Namesilo via SAX and extract specified values
 function _parse_reponse()
 {
@@ -184,11 +145,6 @@ function _parse_reponse()
         else                                    ## element start event
             XPATH="${XPATH}/${ENTITY}"
             case ${XPATH} in
-                "//namesilo/request/operation")
-                _log_debug "Value parsed: [ REQ_OPER=${CONTENT} ]"
-                REQ_OPER=${CONTENT} ;;
-                "//namesilo/request/ip")
-                _log_debug "Value parsed: [ REQ_IP=${CONTENT} ]"
                 REQ_IP=${CONTENT} ;;
                 "//namesilo/reply/code")
                 _log_debug "Value parsed: [ REP_CODE=${CONTENT} ]"
@@ -222,6 +178,37 @@ function _parse_reponse()
 }
 
 function fetch_records()
+{
+    local DS i j
+    declare -A DS_IDX DS_NUM
+    for i in ${!HOST[@]}; do
+        DS_IDX[${DOMAIN[i]}]+=" ${i}"
+        [[ -n ${CUR_IPV4} && -z ${A1_RESULT[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+        [[ -n ${CUR_IPV6} && -z ${A4_RESULT[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+    done
+
+    for DS in ${!DS_IDX[*]}; do
+        [[ ${DS_NUM[${DS}]:-0} == 0 ]] && continue
+
+        ## https://www.namesilo.com/api_reference.php#dnsListRecords
+        local REQ="https://www.namesilo.com/api/dnsListRecords"
+        REQ="${REQ}?version=1&type=xml&key=${APIKEY}&domain=${DS}"
+        _log_debug "Start fetching DNS records of domain [${DS}]."
+        wget -qO- ${REQ} > ${RESPONSE} 2>&1
+        _parse_reponse
+
+        local DS_IDX_ITER=(${DS_IDX[${DS}]})
+        for i in ${DS_IDX_ITER[@]}; do
+
+        done
+
+    done
+
+}
+
+
+
+function fetch_records_old()
 {
     local REQ_BASE REQ DOMAIN_POINTER REC_IDX
     ## https://www.namesilo.com/api_reference.php#dnsListRecords
