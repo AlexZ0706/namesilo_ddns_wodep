@@ -49,6 +49,7 @@ RSLT_801="[801] Invalid Host Syntax"
 RSLT_811="[811] Resolving failed via IPv4"
 RSLT_812="[812] Resolving failed via IPv6"
 RSLT_821="[821] No exist A record is matched"
+RSLT_822="[822] No exist AAAA record is matched"
 RSLT_850="[850] IP does not change, no need to update"
 
 function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
@@ -89,8 +90,8 @@ function check_hosts()
 
         ## split host
         if [[ ${NUM} -lt 2 ]]; then
-            [[ -n ${CUR_IPV4} ]] && A1_RESULT[${i}]=${RSLT_801}
-            [[ -n ${CUR_IPV6} ]] && A4_RESULT[${i}]=${RSLT_801}
+            [[ -n ${CUR_IPV4} ]] && RESULT_A1[${i}]=${RSLT_801}
+            [[ -n ${CUR_IPV6} ]] && RESULT_A4[${i}]=${RSLT_801}
         else
             DOMAIN[${i}]="${SECS[(NUM-2)]}.${SECS[(NUM-1)]}"
             [[ ${NUM} -gt 2 ]] && RRHOST[${i}]=${HOST[i]%.${DOMAIN[i]}}
@@ -98,24 +99,24 @@ function check_hosts()
         _log_debug "Split host-${i}: [${HOST[i]}]>>[${RRHOST[i]}|${DOMAIN[i]}]"
 
         ## resolving check via ipv4
-        if [[ -n ${CUR_IPV4} && -z ${A1_RESULT[i]} ]]; then
+        if [[ -n ${CUR_IPV4} && -z ${RESULT_A1[i]} ]]; then
             RES=$( ping -c 1 -w 1 ${HOST[i]} 2>/dev/null )
             _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
             if [[ -z ${RES} ]]; then
-                A1_RESULT[${i}]=${RSLT_811}
+                RESULT_A1[${i}]=${RSLT_811}
             elif [[ ${RES} == *"(${CUR_IPV4})"* ]]; then
-                A1_RESULT[${i}]=${RSLT_850}
+                RESULT_A1[${i}]=${RSLT_850}
             fi
         fi
 
         ## resolving check via ipv6
-        if [[ -n ${CUR_IPV6} && -z ${A4_RESULT[i]} ]]; then
+        if [[ -n ${CUR_IPV6} && -z ${RESULT_A4[i]} ]]; then
             RES=$( ping6 -c 1 -w 1 ${HOST[i]} 2>/dev/null )
             _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
             if [[ -z ${RES} ]]; then
-                A4_RESULT[${i}]=${RSLT_812}
+                RESULT_A4[${i}]=${RSLT_812}
             elif [[ ${RES} == *"(${CUR_IPV6})"* ]]; then
-                A4_RESULT[${i}]=${RSLT_850}
+                RESULT_A4[${i}]=${RSLT_850}
             fi
         fi
     done
@@ -183,12 +184,15 @@ function fetch_records()
     declare -A DS_IDX DS_NUM
     for i in ${!HOST[@]}; do
         DS_IDX[${DOMAIN[i]}]+=" ${i}"
-        [[ -n ${CUR_IPV4} && -z ${A1_RESULT[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
-        [[ -n ${CUR_IPV6} && -z ${A4_RESULT[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+        [[ -n ${CUR_IPV4} && -z ${RESULT_A1[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+        [[ -n ${CUR_IPV6} && -z ${RESULT_A4[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
     done
 
     for DS in ${!DS_IDX[*]}; do
-        [[ ${DS_NUM[${DS}]:-0} == 0 ]] && continue
+        if [[ ${DS_NUM[${DS}]:-0} == 0 ]]; then
+            _log_debug "Skip fetching records of [${DS}] with no valid host."
+            continue
+        fi
 
         ## https://www.namesilo.com/api_reference.php#dnsListRecords
         local REQ="https://www.namesilo.com/api/dnsListRecords"
@@ -199,6 +203,32 @@ function fetch_records()
 
         local DS_IDX_ITER=(${DS_IDX[${DS}]})
         for i in ${DS_IDX_ITER[@]}; do
+            STAGE[${i}]="${STAGE[i]}-->fetch"
+            ## request failed
+            if [[ ${REP_CODE} -ne 300 ]]; then
+                RESULT[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+                continue
+            fi
+            ## default results with no record matched
+            [[ -n ${CUR_IPV4} ]] && RESULT_A1[${i}]=${RSLT_821}
+            [[ -n ${CUR_IPV6} ]] && RESULT_A4[${i}]=${RSLT_822}
+            ## search the record with same rrhost & rrtype
+            for j in ${!REP_RRHOST[@]}; do
+                [[ ${REP_RRHOST[j]} != ${HOST[i]} ]] && continue
+                if [[ ${REP_RRTYPE[j]} == "A" ]]; then
+                    local SUF="A1"
+                elif [[ ${REP_RRTYPE[j]} == "AAAA" ]]; then
+                    local SUF="A4"
+                else
+                    continue
+                fi
+                eval "RRID_${SUF}[${i}]=${REP_RRID[j]}"
+                eval "RRTTL_${SUF}[${i}]=${REP_RRTTL[j]}"
+                eval "RRVALUE_${SUF}[${i}]=${REP_RRVALUE[j]}"
+                eval "RESULT_${SUF}[${i}]=''"
+                REP_RRHOST[${j}]=""     ## ensure this record won't be reused
+
+            done
 
         done
 
