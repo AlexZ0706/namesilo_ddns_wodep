@@ -46,8 +46,7 @@ LOG_DEBUG=true
 ## ========= Do not edit lines below =========
 
 RSLT_801="[801] Invalid Host Syntax"
-RSLT_811="[811] Resolving failed via IPv4"
-RSLT_812="[812] Resolving failed via IPv6"
+RSLT_811="[811] Resolving failed"
 RSLT_821="[821] No exist A record is matched"
 RSLT_822="[822] No exist AAAA record is matched"
 RSLT_850="[850] IP does not change, no need to update"
@@ -70,7 +69,7 @@ function get_current_ip()
             VAR=$( wget -qO- -t 1 -T 5 ${IP_POOL[i]} )
             _log_debug "Get [${VAR}] from [${IP_POOL[i]}] for IP${IP_TYPE}."
             if [[ ${VAR} =~ ${IP_PATTERN} ]]; then
-                eval "CUR_IP_${IP_TYPE}=${VAR}"
+                eval CUR_IP_${IP_TYPE}=${VAR}
                 break
             fi
         done
@@ -85,43 +84,38 @@ function get_current_ip()
 
 function check_hosts()
 {
-    local SECS NUM RES i
+    local IP_TYPE IP_NAME VAR i
+    local IP_COMMAND_V4="ping"
+    local IP_COMMAND_V6="ping6"
+
     for i in ${!HOST[@]}; do
         STAGE[${i}]="check"
-        SECS=(${HOST[i]//./ })
-        NUM=${#SECS[@]}
+        local SECS=(${HOST[i]//./ })
+        local NUM=${#SECS[@]}
 
         ## split host
         if [[ ${NUM} -lt 2 ]]; then
-            [[ -n ${CUR_IPV4} ]] && RESULT_A1[${i}]=${RSLT_801}
-            [[ -n ${CUR_IPV6} ]] && RESULT_A4[${i}]=${RSLT_801}
+            [[ -n ${CUR_IP_V4} ]] && RESULT_V4[${i}]=${RSLT_801}
+            [[ -n ${CUR_IP_V6} ]] && RESULT_V6[${i}]=${RSLT_801}
         else
             DOMAIN[${i}]="${SECS[(NUM-2)]}.${SECS[(NUM-1)]}"
             [[ ${NUM} -gt 2 ]] && RRHOST[${i}]=${HOST[i]%.${DOMAIN[i]}}
         fi
         _log_debug "Split host-${i}: [${HOST[i]}]>>[${RRHOST[i]}|${DOMAIN[i]}]"
 
-        ## resolving check via ipv4
-        if [[ -n ${CUR_IPV4} && -z ${RESULT_A1[i]} ]]; then
-            RES=$( ping -c 1 -w 1 ${HOST[i]} 2>/dev/null )
-            _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
+        ## resolving check
+        for IP_TYPE in V4 V6; do
+            IP_NAME="CUR_IP_${IP_TYPE}"; [[ -z ${!IP_NAME} ]] && continue
+            VAR="RESULT_${IP_TYPE}"; [[ -n ${!VAR} ]] && continue
+            VAR="IP_COMMAND_${IP_TYPE}"
+            local RES=$( ${!VAR} -c 1 -w 1 ${HOST[i]} 2>/dev/null )
+            _log_debug "Result of ${!VAR} ${HOST[i]}: [ ${RES} ]"
             if [[ -z ${RES} ]]; then
-                RESULT_A1[${i}]=${RSLT_811}
-            elif [[ ${RES} == *"(${CUR_IPV4})"* ]]; then
-                RESULT_A1[${i}]=${RSLT_850}
+                eval RESULT_${IP_TYPE}[${i}]=${RSLT_811}
+            elif [[ ${RES} == *"(${!IP_NAME})"* ]]; then
+                eval RESULT_${IP_TYPE}[${i}]=${RSLT_850}
             fi
-        fi
-
-        ## resolving check via ipv6
-        if [[ -n ${CUR_IPV6} && -z ${RESULT_A4[i]} ]]; then
-            RES=$( ping6 -c 1 -w 1 ${HOST[i]} 2>/dev/null )
-            _log_debug "Ping ${HOST[i]} result: [ ${RES} ]"
-            if [[ -z ${RES} ]]; then
-                RESULT_A4[${i}]=${RSLT_812}
-            elif [[ ${RES} == *"(${CUR_IPV6})"* ]]; then
-                RESULT_A4[${i}]=${RSLT_850}
-            fi
-        fi
+        done
     done
 }
 
@@ -186,8 +180,8 @@ function fetch_records()
     declare -A DS_IDX DS_NUM
     for i in ${!HOST[@]}; do
         DS_IDX[${DOMAIN[i]}]+=" ${i}"
-        [[ -n ${CUR_IPV4} && -z ${RESULT_A1[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
-        [[ -n ${CUR_IPV6} && -z ${RESULT_A4[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+        [[ -n ${CUR_IP_V4} && -z ${RESULT_V4[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+        [[ -n ${CUR_IP_V6} && -z ${RESULT_V6[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
     done
 
     for DS in ${!DS_IDX[*]}; do
@@ -212,8 +206,8 @@ function fetch_records()
                 continue
             fi
             ## default results with no record matched
-            [[ -n ${CUR_IPV4} ]] && RESULT_A1[${i}]=${RSLT_821}
-            [[ -n ${CUR_IPV6} ]] && RESULT_A4[${i}]=${RSLT_822}
+            [[ -n ${CUR_IP_V4} ]] && RESULT_V4[${i}]=${RSLT_821}
+            [[ -n ${CUR_IP_V6} ]] && RESULT_V6[${i}]=${RSLT_822}
             ## search the record with same rrhost & rrtype
             for j in ${!REP_RRHOST[@]}; do
                 [[ ${REP_RRHOST[j]} != ${HOST[i]} ]] && continue
