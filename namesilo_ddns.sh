@@ -24,7 +24,7 @@ RESPONSE="/var/tmp/namesilo_response.xml"
 
 ## Pools for request public IP address
 ## Emptying pool means to disable updating the corresponding DNS record (A/AAAA)
-POOL_IPV4=(
+IP_POOL_V4=(
     "http://v4.ident.me"
     "https://ip4.nnev.de"
     "https://v4.ifconfig.co"
@@ -32,7 +32,7 @@ POOL_IPV4=(
     "https://ipv4.wtfismyip.com/text"
 )
 
-POOL_IPV6=(
+IP_POOL_V6=(
     "http://v6.ident.me"
     "https://ip6.nnev.de"
     "https://v6.ifconfig.co"
@@ -54,30 +54,33 @@ RSLT_850="[850] IP does not change, no need to update"
 
 function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
 
-## @Para1: "IPV4" or "IPV6"
 function get_current_ip()
 {
-    [[ ${1} != "IPV4" && ${1} != "IPV6" ]] && return 1
+    local IP_TYPE VAR i
+    local IP_PATTERN_V4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
+    local IP_PATTERN_V6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
 
-    local VAR i
-    local PATTERN_IPV4="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
-    local PATTERN_IPV6="^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{1,4}$"
-    VAR="PATTERN_${1}"; local PATTERN_IP=${!VAR}
-    VAR="POOL_${1}[@]"; local POOL_IP=(${!VAR})
+    for IP_TYPE in V4 V6; do
+        VAR="IP_PATTERN_${IP_TYPE}"; local IP_PATTERN=${!VAR}
+        VAR="IP_POOL_${IP_TYPE}[@]"; local IP_POOL=(${!VAR})
 
-    ## get current ip from pool in random order
-    local RAND=$(( ${RANDOM} % ${#POOL_IP[@]} ))
-    for (( i=((${RAND}-${#POOL_IP[@]})); i<${RAND}; i++ )); do
-        VAR=$( wget -qO- -t 1 -T 5 ${POOL_IP[i]} )
-        _log_debug "Get [${VAR}] from [${POOL_IP[i]}]."
-        if [[ ${VAR} =~ ${PATTERN_IP} ]]; then
-            eval "CUR_${1}=${VAR}"
-            break
+        ## get current ip from pool in random order
+        local RAND=$(( ${RANDOM} % ${#IP_POOL[@]} ))
+        for (( i=((${RAND}-${#IP_POOL[@]})); i<${RAND}; i++ )); do
+            VAR=$( wget -qO- -t 1 -T 5 ${IP_POOL[i]} )
+            _log_debug "Get [${VAR}] from [${IP_POOL[i]}] for IP${IP_TYPE}."
+            if [[ ${VAR} =~ ${IP_PATTERN} ]]; then
+                eval "CUR_IP_${IP_TYPE}=${VAR}"
+                break
+            fi
+        done
+
+        VAR="CUR_IP_${IP_TYPE}"
+        if [[ -z ${!VAR} ]]; then
+            _log_debug "Get IP${IP_TYPE} failed." \
+                "Corresponding records (A/AAAA) will not be updated."
         fi
     done
-
-    VAR="${1}"; [[ -n ${!VAR} ]] && return 0
-    _log_debug "Get ${1} failed. Corresponding records will not be updated."
 }
 
 function check_hosts()
@@ -146,7 +149,6 @@ function _parse_reponse()
         else                                    ## element start event
             XPATH="${XPATH}/${ENTITY}"
             case ${XPATH} in
-                REQ_IP=${CONTENT} ;;
                 "//namesilo/reply/code")
                 _log_debug "Value parsed: [ REP_CODE=${CONTENT} ]"
                 REP_CODE=${CONTENT} ;;
