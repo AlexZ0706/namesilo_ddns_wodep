@@ -106,10 +106,9 @@ function check_hosts()
 
         ## resolving check
         for IP_TYPE in V4 V6; do
-            local IP_NAME="CUR_IP_${IP_TYPE}"
-            [[ -z ${!IP_NAME} ]] && continue
-            local VAR="RESULT_${IP_TYPE}"
-            [[ -n ${!VAR} ]] && continue
+            local IP_NAME="CUR_IP_${IP_TYPE}"; [[ -z ${!IP_NAME} ]] && continue
+            local VAR="RESULT_${IP_TYPE}"; [[ -n ${!VAR} ]] && continue
+
             local VAR="IP_COMMAND_${IP_TYPE}"
             local RES=$( ${!VAR} -c 1 -w 1 ${HOST[i]} 2>/dev/null )
             _log_debug "Result of ${!VAR} ${HOST[i]}: [ ${RES} ]"
@@ -189,8 +188,8 @@ function _match_response()
     for i in ${DS_IDX_ITER[@]}; do
         STAGE[${i}]="${STAGE[i]}-->fetch"
         for IP_TYPE in V4 V6; do
-            local IP_NAME="CUR_IP_${IP_TYPE}"
-            [[ -z ${!IP_NAME} ]] && continue
+            local VAR="CUR_IP_${IP_TYPE}"
+            [[ -z ${!VAR} ]] && continue
 
             if [[ ${REP_CODE} -ne 300 ]]; then
                 eval RESULT_${IP_TYPE}[${i}]="[${REP_CODE}] ${REP_DETAIL}"
@@ -214,8 +213,8 @@ function _match_response()
                 eval RRTTL_${IP_TYPE}[${i}]=${REP_RRTTL[j]}
                 eval RRVALUE_${IP_TYPE}[${i}]=${REP_RRVALUE[j]}
 
-                local IP_NAME="CUR_IP_${IP_TYPE}"
-                if [[ ${REP_RRVALUE[j]} == ${!IP_NAME} ]]; then
+                local VAR="CUR_IP_${IP_TYPE}"
+                if [[ ${REP_RRVALUE[j]} == ${!VAR} ]]; then
                     eval RESULT_${IP_TYPE}[${i}]=${RSLT_850}
                 else
                     eval RESULT_${IP_TYPE}[${i}]=""
@@ -266,14 +265,13 @@ function update_record()
 
     for i in ${!HOST[@]}; do
         for IP_TYPE in V4 V6; do
-            local VAR="RESULT_${IP_TYPE}[${i}]"
-            [[ -n ${!VAR} ]] && continue
+            local VAR="RESULT_${IP_TYPE}[${i}]"; [[ -n ${!VAR} ]] && continue
 
-            local IP_NAME="CUR_IP_${IP_TYPE}"
+            local VAR="CUR_IP_${IP_TYPE}"
             local REQ="https://www.namesilo.com/api/dnsUpdateRecord"
             REQ="${REQ}?version=1&type=xml&key=${APIKEY}&domain=${DOMAIN[i]}"
             REQ="${REQ}&rrid=${RRID[i]}&rrhost=${RRHOST[i]}"
-            REQ="${REQ}&rrvalue=${!IP_NAME}&rrttl=${RRTTL[i]}"
+            REQ="${REQ}&rrvalue=${!VAR}&rrttl=${RRTTL[i]}"
 
             local VAR="IP_RECORD_${IP_TYPE}"
             STAGE[${i}]="${STAGE[i]}-->update(${!VAR})"
@@ -284,7 +282,7 @@ function update_record()
 
             if [[ ${REP_CODE} -eq 300 ]]; then
                 eval RRID_${IP_TYPE}[${i}]=${REP_RRID}
-                eval RRVALUE_${IP_TYPE}[${i}]=${!IP_NAME}
+                eval RRVALUE_${IP_TYPE}[${i}]=""
                 let UPDATE_COUNT++
             fi
             eval RESULT_${IP_TYPE}[${i}]="[${REP_CODE}] ${REP_DETAIL}"
@@ -300,6 +298,8 @@ function print_report()
     local SUBTITLE_V4="  <----------------- A Record ----------------->  "
     local SUBTITLE_V6="  <---------------- AAAA Record --------------->  "
 
+    local function echo_if_valid() { [[ -n ${1} ]] && echo "${2}${!1}"; }
+
     echo
     echo "[Namesilo DDNS Updating Report]"
     echo "<TIME> $(date)"
@@ -309,16 +309,15 @@ function print_report()
     for (( i=0; i<${#HOST[@]}; i++ )); do
         echo " <HOST-${i}> ${HOST[i]}"
         echo " <STAGE> ${STAGE[i]}"
-        echo " <DOMAIN> ${DOMAIN[i]:-NUL}"
-        echo " <RRHOST> ${RRHOST[i]:-NUL}"
+        echo_if_valid "DOMAIN[${i}]" " <DOMAIN>"
+        echo_if_valid "RRHOST[${i}]" " <SUBDOMAIN>"
         for IP_TYPE in V4 V6; do
-            local IP_NAME="CUR_IP_${IP_TYPE}"
-            [[ -z ${!IP_NAME} ]] && continue
-            VAR="SUBTITLE_${IP_TYPE}"; echo ${!VAR}
-            VAR="RESULT_${IP_TYPE}[${i}]";  echo "  <RESULT> ${!VAR:-NUL}"
-            VAR="RRID_${IP_TYPE}[${i}]";    echo "  <RRID> ${!VAR:-NUL}"
-            VAR="RRVALUE_${IP_TYPE}[${i}]"; echo "  <RRVALUE> ${!VAR:-NUL}"
-            VAR="RRTTL_${IP_TYPE}[${i}]";   echo "  <RRTTL> ${!VAR:-NUL}"
+            local VAR="CUR_IP_${IP_TYPE}"; [[ -z ${!VAR} ]] && continue
+            echo_if_valid "SUBTITLE_${IP_TYPE}"
+            echo_if_valid "RESULT_${IP_TYPE}[${i}]"  "  <RESULT> "
+            echo_if_valid "RRID_${IP_TYPE}[${i}]"    "  <RRID> "
+            echo_if_valid "RRVALUE_${IP_TYPE}[${i}]" "  <OLD_IP> "
+            echo_if_valid "RRTTL_${IP_TYPE}[${i}]"   "  <TTL> "
         done
         echo ${SEP_LINE}
     done
@@ -330,9 +329,12 @@ function main()
     check_hosts
     fetch_records
     update_records
-    [[ ${UPDATE_COUNT} -eq 0 ]] && exit 0
-    print_report
+    if [[ ${UPDATE_COUNT} -gt 0 ]]; then
+        print_report
+        exit $(( ${UPDATE_COUNT}+128 ))
+    else
+        exit 0
+    fi
 }
 
-#main
-exit $(( ${UPDATE_COUNT}+128 ))
+main
