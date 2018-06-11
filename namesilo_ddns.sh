@@ -188,13 +188,16 @@ function _match_response()
     local DS_IDX_ITER=(${1})
     for i in ${DS_IDX_ITER[@]}; do
         STAGE[${i}]="${STAGE[i]}-->fetch"
-        if [[ ${REP_CODE} -ne 300 ]]; then      ## request failed
-            RESULT[${i}]="[${REP_CODE}] ${REP_DETAIL}"
-            continue
-        fi
-        ## default results with no record matched
-        [[ -n ${CUR_IP_V4} ]] && RESULT_V4[${i}]=${RSLT_821}
-        [[ -n ${CUR_IP_V6} ]] && RESULT_V6[${i}]=${RSLT_821}
+        for IP_TYPE in V4 V6; do
+            local IP_NAME="CUR_IP_${IP_TYPE}"
+            [[ -z ${!IP_NAME} ]] && continue
+
+            if [[ ${REP_CODE} -ne 300 ]]; then
+                eval RESULT_${IP_TYPE}[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+            else
+                eval RESULT_${IP_TYPE}[${i}]=${RSLT_821}
+            fi
+        done
 
         ## iter each response record with the same host
         for j in ${!REP_RRHOST[@]}; do
@@ -205,14 +208,14 @@ function _match_response()
                 local VAR="IP_RECORD_${IP_TYPE}"
                 [[ ${REP_RRTYPE[j]} != ${!VAR} ]] && continue
                 _log_debug "Record-${j} [${!VAR}|${REP_RRID[j]}]" \
-                    "matched host-${i} [${HOST[i]}]"
+                    "matched host-${i} [${HOST[i]}]."
 
                 eval RRID_${IP_TYPE}[${i}]=${REP_RRID[j]}
                 eval RRTTL_${IP_TYPE}[${i}]=${REP_RRTTL[j]}
                 eval RRVALUE_${IP_TYPE}[${i}]=${REP_RRVALUE[j]}
 
-                local VAR="CUR_IP_${IP_TYPE}"
-                if [[ ${REP_RRVALUE[j]} == ${!VAR} ]]; then
+                local IP_NAME="CUR_IP_${IP_TYPE}"
+                if [[ ${REP_RRVALUE[j]} == ${!IP_NAME} ]]; then
                     eval RESULT_${IP_TYPE}[${i}]=${RSLT_850}
                 else
                     eval RESULT_${IP_TYPE}[${i}]=""
@@ -230,8 +233,12 @@ function fetch_records()
     ## count the number of valid host for each domain
     for i in ${!HOST[@]}; do
         DS_IDXS[${DOMAIN[i]}]+=" ${i}"
-        [[ -n ${CUR_IP_V4} && -z ${RESULT_V4[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
-        [[ -n ${CUR_IP_V6} && -z ${RESULT_V6[i]} ]] && let DS_NUM[${DOMAIN[i]}]++
+        if [[ -n ${CUR_IP_V4} && -z ${RESULT_V4[i]} ]]; then
+            let DS_NUM[${DOMAIN[i]}]++
+        fi
+        if [[ -n ${CUR_IP_V6} && -z ${RESULT_V6[i]} ]]; then
+            let DS_NUM[${DOMAIN[i]}]++
+        fi
     done
 
     ## iter each domain with at least one host to be updated
@@ -251,28 +258,40 @@ function fetch_records()
     done
 }
 
-function update_records()
+function update_record()
 {
-    local REQ_BASE REQ
-    ## https://www.namesilo.com/api_reference.php#dnsUpdateRecord
-    REQ_BASE="https://www.namesilo.com/api/dnsUpdateRecord?version=1&type=xml"
+    local IP_TYPE i
+    local IP_RECORD_V4="A"
+    local IP_RECORD_V6="AAAA"
 
     for i in ${!HOST[@]}; do
-        [[ -n ${RESULT[i]} ]] && continue
-        STAGE[${i}]="${STAGE[i]}-->update"
+        local IS_UPDATED=""
+        for IP_TYPE in V4 V6; do
+            local VAR="RESULT_${IP_TYPE}[${i}]"
+            [[ -n ${!VAR} ]] && continue
+            IS_UPDATED=true
 
-        REQ="${REQ_BASE}&key=${APIKEY}&domain=${DOMAIN[i]}&rrid=${RRID[i]}"
-        REQ="${REQ}&rrhost=${RRHOST[i]}&rrvalue=${REQ_IP}&rrttl=${RRTTL[i]}"
-        _log_debug "Start updating DNS record of host [${HOST[i]}]."
-        wget -qO- ${REQ} > ${RESPONSE} 2>&1
-        _parse_response
+            local IP_NAME="CUR_IP_${IP_TYPE}"
+            local REQ="https://www.namesilo.com/api/dnsUpdateRecord"
+            REQ="${REQ}?version=1&type=xml&key=${APIKEY}&domain=${DOMAIN[i]}"
+            REQ="${REQ}&rrid=${RRID[i]}&rrhost=${RRHOST[i]}"
+            REQ="${REQ}&rrvalue=${!IP_NAME}&rrttl=${RRTTL[i]}"
 
-        if [[ ${REP_CODE} -eq 300 ]]; then      ## request success
-            RRID[${i}]=${REP_RRID}
-            RRVALUE[${i}]=${REQ_IP}
-        fi
-        RESULT[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+            local VAR="IP_RECORD_${IP_TYPE}"
+            _log_debug "Start updating ${!VAR} record for" \
+                "host-${i} [${HOST[i]}]."
+            wget -qO- ${REQ} > ${RESPONSE} 2>&1
+            _parse_response
+
+            if [[ ${REP_CODE} -eq 300 ]]; then
+                eval RRID_${IP_TYPE}[${i}]=${REP_RRID}
+                eval RRVALUE_${IP_TYPE}[${i}]=${!IP_NAME}
+            fi
+            eval RESULT_${IP_TYPE}[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+        done
+        [[ -n ${IS_UPDATED} ]] && STAGE[${i}]="${STAGE[i]}-->update"
     done
+
 }
 
 function print_report()
