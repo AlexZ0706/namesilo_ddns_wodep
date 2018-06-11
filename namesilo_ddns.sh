@@ -122,8 +122,8 @@ function check_hosts()
     done
 }
 
-## Parse xml response from Namesilo via SAX and extract specified values
-function _parse_reponse()
+## Parse the Namesilo XML response via SAX and extract the specified values
+function _parse_response()
 {
     unset REQ_OPER REQ_IP REP_CODE REP_DETAIL
     unset REP_RRID REP_RRTYPE REP_RRHOST REP_RRVALUE REP_RRTTL
@@ -177,11 +177,54 @@ function _parse_reponse()
     rm -f ${RESPONSE}
 }
 
-function fetch_records()
+## Match the specified hosts with the fetched response records
+## @Para1: indexes of the hosts to be matched
+function _match_response()
 {
-    local DS IP_TYPE i j
+    local IP_TYPE i j
     local IP_RECORD_V4="A"
     local IP_RECORD_V6="AAAA"
+
+    local DS_IDX_ITER=(${1})
+    for i in ${DS_IDX_ITER[@]}; do
+        STAGE[${i}]="${STAGE[i]}-->fetch"
+        if [[ ${REP_CODE} -ne 300 ]]; then      ## request failed
+            RESULT[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+            continue
+        fi
+        ## default results with no record matched
+        [[ -n ${CUR_IP_V4} ]] && RESULT_V4[${i}]=${RSLT_821}
+        [[ -n ${CUR_IP_V6} ]] && RESULT_V6[${i}]=${RSLT_821}
+
+        ## iter each response record with the same host
+        for j in ${!REP_RRHOST[@]}; do
+            [[ ${REP_RRHOST[j]} != ${HOST[i]} ]] && continue
+            REP_RRHOST[${j}]=""   ## ensure this record will not be reused
+
+            for IP_TYPE in V4 V6; do
+                local VAR="IP_RECORD_${IP_TYPE}"
+                [[ ${REP_RRTYPE[j]} != ${!VAR} ]] && continue
+                _log_debug "Record-${j} [${!VAR}|${REP_RRID[j]}]" \
+                    "matched host-${i} [${HOST[i]}]"
+
+                eval RRID_${IP_TYPE}[${i}]=${REP_RRID[j]}
+                eval RRTTL_${IP_TYPE}[${i}]=${REP_RRTTL[j]}
+                eval RRVALUE_${IP_TYPE}[${i}]=${REP_RRVALUE[j]}
+
+                local VAR="CUR_IP_${IP_TYPE}"
+                if [[ ${REP_RRVALUE[j]} == ${!VAR} ]]; then
+                    eval RESULT_${IP_TYPE}[${i}]=${RSLT_850}
+                else
+                    eval RESULT_${IP_TYPE}[${i}]=""
+                fi
+            done
+        done
+    done
+}
+
+function fetch_records()
+{
+    local DS i
     declare -A DS_IDXS DS_NUM
 
     ## count the number of valid host for each domain
@@ -198,47 +241,13 @@ function fetch_records()
                 "which has no valid host."
             continue
         fi
-
         ## https://www.namesilo.com/api_reference.php#dnsListRecords
         local REQ="https://www.namesilo.com/api/dnsListRecords"
         REQ="${REQ}?version=1&type=xml&key=${APIKEY}&domain=${DS}"
         _log_debug "Start fetching DNS records of domain [${DS}]."
         wget -qO- ${REQ} > ${RESPONSE} 2>&1
-        _parse_reponse
-
-        ## iter each host belonging to this domain
-        local DS_IDX_ITER=(${DS_IDXS[${DS}]})
-        for i in ${DS_IDX_ITER[@]}; do
-            STAGE[${i}]="${STAGE[i]}-->fetch"
-            if [[ ${REP_CODE} -ne 300 ]]; then      ## request failed
-                RESULT[${i}]="[${REP_CODE}] ${REP_DETAIL}"
-                continue
-            fi
-            ## default results with no record matched
-            [[ -n ${CUR_IP_V4} ]] && RESULT_V4[${i}]=${RSLT_821}
-            [[ -n ${CUR_IP_V6} ]] && RESULT_V6[${i}]=${RSLT_821}
-
-            ## iter each response record with the same host
-            for j in ${!REP_RRHOST[@]}; do
-                [[ ${REP_RRHOST[j]} != ${HOST[i]} ]] && continue
-                for IP_TYPE in V4 V6; do
-                    local VAR="IP_RECORD_${IP_TYPE}"
-                    [[ ${REP_RRTYPE[j]} != ${!VAR} ]] && continue
-                    _log_debug "Record-${j} [${!VAR}|${REP_RRID[j]}]" \
-                        "matched host-${i} [${HOST[i]}]"
-                    eval RRID_${IP_TYPE}[${i}]=${REP_RRID[j]}
-                    eval RRTTL_${IP_TYPE}[${i}]=${REP_RRTTL[j]}
-                    eval RRVALUE_${IP_TYPE}[${i}]=${REP_RRVALUE[j]}
-                    local VAR="CUR_IP_${IP_TYPE}"
-                    if [[ ${REP_RRVALUE[j]} == ${!VAR} ]]; then
-                        eval RESULT_${IP_TYPE}[${i}]=${RSLT_850}
-                    else
-                        eval RESULT_${IP_TYPE}[${i}]=""
-                    fi
-                done
-                REP_RRHOST[${j}]=""   ## ensure this record will not be reused
-            done
-        done
+        _parse_response
+        _match_response ${DS_IDXS[${DS}]}
     done
 }
 
@@ -256,7 +265,7 @@ function update_records()
         REQ="${REQ}&rrhost=${RRHOST[i]}&rrvalue=${REQ_IP}&rrttl=${RRTTL[i]}"
         _log_debug "Start updating DNS record of host [${HOST[i]}]."
         wget -qO- ${REQ} > ${RESPONSE} 2>&1
-        _parse_reponse
+        _parse_response
 
         if [[ ${REP_CODE} -eq 300 ]]; then      ## request success
             RRID[${i}]=${REP_RRID}
