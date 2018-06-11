@@ -265,11 +265,9 @@ function update_record()
     local IP_RECORD_V6="AAAA"
 
     for i in ${!HOST[@]}; do
-        local IS_UPDATED=""
         for IP_TYPE in V4 V6; do
             local VAR="RESULT_${IP_TYPE}[${i}]"
             [[ -n ${!VAR} ]] && continue
-            IS_UPDATED=true
 
             local IP_NAME="CUR_IP_${IP_TYPE}"
             local REQ="https://www.namesilo.com/api/dnsUpdateRecord"
@@ -278,6 +276,7 @@ function update_record()
             REQ="${REQ}&rrvalue=${!IP_NAME}&rrttl=${RRTTL[i]}"
 
             local VAR="IP_RECORD_${IP_TYPE}"
+            STAGE[${i}]="${STAGE[i]}-->update(${!VAR})"
             _log_debug "Start updating ${!VAR} record for" \
                 "host-${i} [${HOST[i]}]."
             wget -qO- ${REQ} > ${RESPONSE} 2>&1
@@ -286,10 +285,10 @@ function update_record()
             if [[ ${REP_CODE} -eq 300 ]]; then
                 eval RRID_${IP_TYPE}[${i}]=${REP_RRID}
                 eval RRVALUE_${IP_TYPE}[${i}]=${!IP_NAME}
+                let UPDATE_COUNT++
             fi
             eval RESULT_${IP_TYPE}[${i}]="[${REP_CODE}] ${REP_DETAIL}"
         done
-        [[ -n ${IS_UPDATED} ]] && STAGE[${i}]="${STAGE[i]}-->update"
     done
 
 }
@@ -329,12 +328,11 @@ function main()
 {
     get_current_ip
     check_hosts
-    [[ ${HOST_COUNT} -eq 0 ]] && exit 0
     fetch_records
-    [[ ${HOST_COUNT} -eq 0 ]] && exit 0
     update_records
+    [[ ${UPDATE_COUNT} -eq 0 ]] && exit 0
     print_report
 }
 
 #main
-exit $(( ${HOST_COUNT}+128 ))
+exit $(( ${UPDATE_COUNT}+128 ))
