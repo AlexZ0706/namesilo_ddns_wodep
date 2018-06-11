@@ -296,19 +296,32 @@ function update_record()
 
 function print_report()
 {
+    local IP_TYPE VAR
+    local SEP_LINE="=================================================="
+    local SUBTITLE_V4="  <----------------- A Record ----------------->  "
+    local SUBTITLE_V6="  <---------------- AAAA Record --------------->  "
+
     echo
     echo "[Namesilo DDNS Updating Report]"
     echo "<TIME> $(date)"
-    echo "<CURRENT_IP> ${REQ_IP:-${GET_IP}}"
-    echo "--------------------------------------------------"
+    echo "<CURRENT_IPV4> ${CUR_IP_V4:-NUL}"
+    echo "<CURRENT_IPV6> ${CUR_IP_V6:-NUL}"
+    echo ${SEP_LINE}
     for (( i=0; i<${#HOST[@]}; i++ )); do
-        echo " (HOST-${i}) ${HOST[i]}"
-        echo " <STAGE>  ${STAGE[i]}"
-        echo " <RESULT> ${RESULT[i]}"
-        echo " <DETAIL> rrhost=${RRHOST[i]:-NUL}  domain=${DOMAIN[i]:-NUL}"
-        echo "          rrid=${RRID[i]:-NUL}"
-        echo "          rrvalue=${RRVALUE[i]:-NUL}  rrttl=${RRTTL[i]:-NUL}"
-        echo "--------------------------------------------------"
+        echo " <HOST-${i}> ${HOST[i]}"
+        echo " <STAGE> ${STAGE[i]}"
+        echo " <DOMAIN> ${DOMAIN[i]:-NUL}"
+        echo " <RRHOST> ${RRHOST[i]:-NUL}"
+        for IP_TYPE in V4 V6; do
+            local IP_NAME="CUR_IP_${IP_TYPE}"
+            [[ -z ${!IP_NAME} ]] && continue
+            VAR="SUBTITLE_${IP_TYPE}"; echo ${!VAR}
+            VAR="RESULT_${IP_TYPE}[${i}]";  echo "  <RESULT> ${!VAR:-NUL}"
+            VAR="RRID_${IP_TYPE}[${i}]";    echo "  <RRID> ${!VAR:-NUL}"
+            VAR="RRVALUE_${IP_TYPE}[${i}]"; echo "  <RRVALUE> ${!VAR:-NUL}"
+            VAR="RRTTL_${IP_TYPE}[${i}]";   echo "  <RRTTL> ${!VAR:-NUL}"
+        done
+        echo ${SEP_LINE}
     done
 }
 
