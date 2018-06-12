@@ -1,9 +1,11 @@
 #! /bin/bash
 
 ## Namesilo DDNS without dependences
-## By Mr.Jos
+##      By Mr.Jos
 
-## Requirements: wget; ping; ping6
+## Requirements:
+##      wget or curl
+##      ping or ping6
 
 ## ============ General settings =============
 
@@ -45,12 +47,16 @@ IP_POOL_V6=(
 # unset IP_POOL_V6
 
 ## If enable debug log echo
-LOG_DEBUG=true
+# LOG_DEBUG=true
 
 ## ========= Do not edit lines below =========
 
-if [[ -z $( command -v wget ) ]]; then
-    echo "[ERROR] Essential requirement wget does not exist."
+if [[ -n $( command -v wget ) ]]; then
+    HTTP_GET_CMD="wget -qO-"
+elif [[ -n $( command -v curl ) ]]; then
+    HTTP_GET_CMD="curl -s"
+else
+    echo "[ERROR] Neither of wget and curl exists."
     exit 1
 fi
 [[ -z $( command -v ping  ) ]] && unset IP_POOL_V4
@@ -256,7 +262,7 @@ function fetch_records()
         local REQ="https://www.namesilo.com/api/dnsListRecords"
         REQ="${REQ}?version=1&type=xml&domain=${DS}"
         _log_debug "Fetch DNS records of domain [${DS}]. Request: [ ${REQ} ]"
-        wget -qO- "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
+        ${HTTP_GET_CMD} "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
         _parse_response
         _match_response ${DS_IDXS[${DS}]}
     done
@@ -284,7 +290,7 @@ function update_records()
             STAGE[${i}]="${STAGE[i]}-->update(${!VAR})"
             _log_debug "Updating ${!VAR} record for host-${i} [${HOST[i]}]." \
                 "Request: [ ${REQ} ]"
-            wget -qO- "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
+            ${HTTP_GET_CMD} "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
             _parse_response
 
             if [[ ${REP_CODE} -eq 300 ]]; then
