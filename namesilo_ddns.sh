@@ -5,7 +5,7 @@
 
 ## Requirements:
 ##    (Necessary) wget or curl
-##    (Optional)  ping or ping6
+##    (Necessary) ping or ping6
 ##    (Optional)  sleep
 
 ## ============ General settings =============
@@ -297,9 +297,9 @@ function update_records()
 
             if [[ ${REP_CODE} -eq 300 ]]; then
                 eval RRID_${IP_TYPE}[${i}]='${REP_RRID}'
-                let UPDATE_COUNT++
             fi
             eval RESULT_${IP_TYPE}[${i}]='"[${REP_CODE}] ${REP_DETAIL}"'
+            let UPDATE_COUNT++
             [[ -n $( command -v sleep ) ]] && sleep 5
         done
     done
