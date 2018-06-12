@@ -14,10 +14,9 @@ It is designed for light-weight Linux distributions to dispense with 3rd-party d
 * [x] Minimal Calling Namesilo API
 * [x] Public IP Request Balancing
 
-## Requirements:
-* (Necessary) `wget` or `curl`
-* (Necessary) `ping` and `ping6`
-* (Optional)  `sleep`
+### Requirements:
+* Necessary: `wget` or `curl`
+* Optional:  `ping` `ping6` `sleep`
 
 ### Test
 

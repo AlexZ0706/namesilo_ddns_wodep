@@ -5,7 +5,7 @@
 
 ## Requirements:
 ##    (Necessary) wget or curl
-##    (Necessary) ping or ping6
+##    (Optional)  ping or ping6
 ##    (Optional)  sleep
 
 ## ============ General settings =============
@@ -60,8 +60,6 @@ else
     echo "[ERROR] Neither of wget and curl exists."
     exit 1
 fi
-[[ -z $( command -v ping  ) ]] && unset IP_POOL_V4
-[[ -z $( command -v ping6 ) ]] && unset IP_POOL_V6
 
 RSLT_801="[801] Invalid Host Syntax"
 RSLT_811="[811] Resolving failed"
@@ -128,7 +126,7 @@ function check_hosts()
             local VAR="IP_COMMAND_${IP_TYPE}"
             local RES=$( ${!VAR} -c 1 -w 1 ${HOST[i]} 2>/dev/null )
             _log_debug "Result of ${!VAR} ${HOST[i]}: [ ${RES} ]"
-            if [[ -z ${RES} ]]; then
+            if [[ -z ${RES} && -n $(command -v ${!VAR}) ]]; then
                 eval RESULT_${IP_TYPE}[${i}]='${RSLT_811}'
             elif [[ ${RES} == *"(${!IP_NAME})"* ]]; then
                 eval RESULT_${IP_TYPE}[${i}]='${RSLT_850}'
