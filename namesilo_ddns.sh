@@ -4,8 +4,9 @@
 ##      By Mr.Jos
 
 ## Requirements:
-##      wget or curl
-##      ping or ping6
+##    (Necessary) wget or curl
+##    (Optional)  ping or ping6
+##    (Optional)  sleep
 
 ## ============ General settings =============
 
@@ -265,6 +266,7 @@ function fetch_records()
         ${HTTP_GET_CMD} "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
         _parse_response
         _match_response ${DS_IDXS[${DS}]}
+        [[ -n $( command -v sleep ) ]] && sleep 5
     done
 }
 
@@ -298,6 +300,7 @@ function update_records()
                 let UPDATE_COUNT++
             fi
             eval RESULT_${IP_TYPE}[${i}]='"[${REP_CODE}] ${REP_DETAIL}"'
+            [[ -n $( command -v sleep ) ]] && sleep 5
         done
     done
 
