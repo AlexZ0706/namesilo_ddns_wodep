@@ -1,9 +1,9 @@
-#!/bin/bash
+#! /bin/bash
 
 ## Namesilo DDNS without dependences
 ## By Mr.Jos
 
-## Requirements: bash; wget; ping; ping6
+## Requirements: wget; ping; ping6
 
 ## ============ General settings =============
 
@@ -25,7 +25,7 @@ HOST=(
 RESPONSE="/var/tmp/namesilo_response.xml"
 
 ## Pools for request public IP address
-## Emptying pool means to disable updating the corresponding DNS record (A/AAAA)
+## Unset pool means to disable updating the corresponding DNS record (A/AAAA)
 IP_POOL_V4=(
     "http://v4.ident.me"
     "https://ip4.nnev.de"
@@ -33,6 +33,7 @@ IP_POOL_V4=(
     "https://ipv4.icanhazip.com"
     "https://ipv4.wtfismyip.com/text"
 )
+# unset IP_POOL_V4
 
 IP_POOL_V6=(
     "http://v6.ident.me"
@@ -41,18 +42,26 @@ IP_POOL_V6=(
     "https://ipv6.icanhazip.com"
     "https://ipv6.wtfismyip.com/text"
 )
+# unset IP_POOL_V6
 
 ## If enable debug log echo
 LOG_DEBUG=true
 
 ## ========= Do not edit lines below =========
 
+if [[ -z $( command -v wget ) ]]; then
+    echo "[ERROR] Essential requirement wget does not exist."
+    exit 1
+fi
+[[ -z $( command -v ping  ) ]] && unset IP_POOL_V4
+[[ -z $( command -v ping6 ) ]] && unset IP_POOL_V6
+
 RSLT_801="[801] Invalid Host Syntax"
 RSLT_811="[811] Resolving failed"
 RSLT_821="[821] No exist record is matched"
 RSLT_850="[850] IP does not change, no need to update"
 
-function _log_debug() { [[ -n ${LOG_DEBUG} ]] && echo "> $*"; }
+function _log_debug() { [[ ${LOG_DEBUG} == true ]] && echo "> $*"; }
 
 function get_current_ip()
 {
@@ -78,7 +87,7 @@ function get_current_ip()
         VAR="CUR_IP_${IP_TYPE}"
         if [[ -z ${!VAR} ]]; then
             _log_debug "Get IP${IP_TYPE} failed." \
-                "Corresponding records (A/AAAA) will not be updated."
+                "Corresponding records will not be updated."
         fi
     done
 }
@@ -96,8 +105,8 @@ function check_hosts()
 
         ## split host
         if [[ ${NUM} -lt 2 ]]; then
-            [[ -n ${CUR_IP_V4} ]] && RESULT_V4[${i}]=${RSLT_801}
-            [[ -n ${CUR_IP_V6} ]] && RESULT_V6[${i}]=${RSLT_801}
+            RESULT_V4[${i}]=${RSLT_801}
+            RESULT_V6[${i}]=${RSLT_801}
         else
             DOMAIN[${i}]="${SECS[(NUM-2)]}.${SECS[(NUM-1)]}"
             [[ ${NUM} -gt 2 ]] && RRHOST[${i}]=${HOST[i]%.${DOMAIN[i]}}
@@ -177,36 +186,30 @@ function _parse_response()
 }
 
 ## Match the specified hosts with the fetched response records
-## @Para1: indexes of the hosts to be matched
+## @Params: indexes of the hosts to be matched
 function _match_response()
 {
     local IP_TYPE i j
     local IP_RECORD_V4="A"
     local IP_RECORD_V6="AAAA"
 
-    local DS_IDX_ITER=(${1})
-    for i in ${DS_IDX_ITER[@]}; do
+    for i in $@; do
         STAGE[${i}]="${STAGE[i]}-->fetch"
-        for IP_TYPE in V4 V6; do
-            local VAR="CUR_IP_${IP_TYPE}"
-            [[ -z ${!VAR} ]] && continue
+        if [[ ${REP_CODE} -ne 300 ]]; then
+            RESULT_V4[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+            RESULT_V6[${i}]="[${REP_CODE}] ${REP_DETAIL}"
+            continue
+        fi
 
-            if [[ ${REP_CODE} -ne 300 ]]; then
-                eval RESULT_${IP_TYPE}[${i}]='"[${REP_CODE}] ${REP_DETAIL}"'
-            else
-                eval RESULT_${IP_TYPE}[${i}]='${RSLT_821}'
-            fi
-        done
-
-        ## iter each response record with the same host
+        RESULT_V4[${i}]=${RSLT_821}
+        RESULT_V6[${i}]=${RSLT_821}
         for j in ${!REP_RRHOST[@]}; do
             [[ ${REP_RRHOST[j]} != ${HOST[i]} ]] && continue
             REP_RRHOST[${j}]=""   ## ensure this record will not be reused
-
             for IP_TYPE in V4 V6; do
                 local VAR="IP_RECORD_${IP_TYPE}"
                 [[ ${REP_RRTYPE[j]} != ${!VAR} ]] && continue
-                _log_debug "Record-${j} [${!VAR}|${REP_RRID[j]}]" \
+                _log_debug "Record-${j} [${REP_RRID[j]}|${!VAR}]" \
                     "matched host-${i} [${HOST[i]}]."
 
                 eval RRID_${IP_TYPE}[${i}]='${REP_RRID[j]}'
@@ -243,16 +246,17 @@ function fetch_records()
 
     ## iter each domain with at least one host to be updated
     for DS in ${!DS_IDXS[*]}; do
+        _log_debug "Host indexes of domain [${DS}]: [ ${DS_IDXS[${DS}]} ]."
         if [[ ${DS_NUM[${DS}]:-0} == 0 ]]; then
-            _log_debug "Skip fetching DNS records of [${DS}]" \
+            _log_debug "Skip fetching DNS records of domain [${DS}]" \
                 "which has no valid host."
             continue
         fi
         ## https://www.namesilo.com/api_reference.php#dnsListRecords
         local REQ="https://www.namesilo.com/api/dnsListRecords"
-        REQ="${REQ}?version=1&type=xml&key=${APIKEY}&domain=${DS}"
-        _log_debug "Start fetching DNS records of domain [${DS}]."
-        wget -qO- ${REQ} > ${RESPONSE} 2>&1
+        REQ="${REQ}?version=1&type=xml&domain=${DS}"
+        _log_debug "Fetch DNS records of domain [${DS}]. Request: [ ${REQ} ]"
+        wget -qO- "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
         _parse_response
         _match_response ${DS_IDXS[${DS}]}
     done
@@ -266,25 +270,25 @@ function update_records()
 
     for i in ${!HOST[@]}; do
         for IP_TYPE in V4 V6; do
+            local IP_NAME="CUR_IP_${IP_TYPE}"; [[ -z ${!IP_NAME} ]] && continue
             local VAR="RESULT_${IP_TYPE}[${i}]"; [[ -n ${!VAR} ]] && continue
 
-            local VAR="CUR_IP_${IP_TYPE}"
             ## https://www.namesilo.com/api_reference.php#dnsUpdateRecord
             local REQ="https://www.namesilo.com/api/dnsUpdateRecord"
-            REQ="${REQ}?version=1&type=xml&key=${APIKEY}&domain=${DOMAIN[i]}"
-            REQ="${REQ}&rrid=${RRID[i]}&rrhost=${RRHOST[i]}"
-            REQ="${REQ}&rrvalue=${!VAR}&rrttl=${RRTTL[i]}"
+            REQ="${REQ}?version=1&type=xml&domain=${DOMAIN[i]}"
+            REQ="${REQ}&rrhost=${RRHOST[i]}&rrvalue=${!IP_NAME}"
+            VAR="RRID_${IP_TYPE}[${i}]";  REQ="${REQ}&rrid=${!VAR}"
+            VAR="RRTTL_${IP_TYPE}[${i}]"; REQ="${REQ}&rrttl=${!VAR}"
 
-            local VAR="IP_RECORD_${IP_TYPE}"
+            VAR="IP_RECORD_${IP_TYPE}"
             STAGE[${i}]="${STAGE[i]}-->update(${!VAR})"
-            _log_debug "Start updating ${!VAR} record for" \
-                "host-${i} [${HOST[i]}]."
-            wget -qO- ${REQ} > ${RESPONSE} 2>&1
+            _log_debug "Updating ${!VAR} record for host-${i} [${HOST[i]}]." \
+                "Request: [ ${REQ} ]"
+            wget -qO- "${REQ}&key=${APIKEY}" > ${RESPONSE} 2>&1
             _parse_response
 
             if [[ ${REP_CODE} -eq 300 ]]; then
                 eval RRID_${IP_TYPE}[${i}]='${REP_RRID}'
-                eval RRVALUE_${IP_TYPE}[${i}]=''
                 let UPDATE_COUNT++
             fi
             eval RESULT_${IP_TYPE}[${i}]='"[${REP_CODE}] ${REP_DETAIL}"'
@@ -297,8 +301,8 @@ function print_report()
 {
     local IP_TYPE VAR
     local SEP_LINE="=================================================="
-    local SUBTITLE_V4="  <----------------- A Record ----------------->  "
-    local SUBTITLE_V6="  <---------------- AAAA Record --------------->  "
+    local SUBTITLE_V4="  -------------- A Record --------------"
+    local SUBTITLE_V6="  ------------- AAAA Record ------------"
 
     function _echo_if_valid() { [[ -n ${!1} ]] && echo "${2}${!1}"; }
 
@@ -310,16 +314,19 @@ function print_report()
     echo ${SEP_LINE}
     for (( i=0; i<${#HOST[@]}; i++ )); do
         echo " <HOST-${i}> ${HOST[i]}"
-        echo " <STAGE> ${STAGE[i]}"
-        _echo_if_valid "DOMAIN[${i}]" " <DOMAIN>"
-        _echo_if_valid "RRHOST[${i}]" " <SUBDOMAIN>"
+        echo " <STAGE>  ${STAGE[i]}"
+        _echo_if_valid "DOMAIN[${i}]" " <DOMAIN> "
+        _echo_if_valid "RRHOST[${i}]" " <SUBDOMAIN> "
         for IP_TYPE in V4 V6; do
-            local VAR="CUR_IP_${IP_TYPE}"; [[ -z ${!VAR} ]] && continue
+            local IP_NAME="CUR_IP_${IP_TYPE}"; [[ -z ${!IP_NAME} ]] && continue
             _echo_if_valid "SUBTITLE_${IP_TYPE}"
             _echo_if_valid "RESULT_${IP_TYPE}[${i}]"  "  <RESULT> "
             _echo_if_valid "RRID_${IP_TYPE}[${i}]"    "  <RRID> "
-            _echo_if_valid "RRVALUE_${IP_TYPE}[${i}]" "  <OLD_IP> "
-            _echo_if_valid "RRTTL_${IP_TYPE}[${i}]"   "  <TTL> "
+            _echo_if_valid "RRTTL_${IP_TYPE}[${i}]"   "  <TTL>  "
+            local VAR="RRVALUE_${IP_TYPE}[${i}]"
+            if [[ -n ${!VAR} && ${!VAR} != ${!IP_NAME} ]]; then
+                echo "  <OLD_IP> ${!VAR}"
+            fi
         done
         echo ${SEP_LINE}
     done
