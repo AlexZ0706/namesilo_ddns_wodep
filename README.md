@@ -15,8 +15,8 @@ It is designed for light-weight Linux distributions to dispense with 3rd-party d
 * [x] Public IP Request Balancing
 
 ### Requirements:
-* Necessary: `wget` or `curl`
-* Optional:  `ping` `ping6` `sleep`
+* Necessary: `wget` or `curl`, `cat`
+* Optional:  `ping`, `ping6`, `sleep`, `tail`
 
 ### Test
 
